@@ -36,6 +36,12 @@ class GaussianModel:
             symm = strip_symmetric(actual_covariance)
             return symm
         
+        self.diag_exp = lambda x: torch.exp(x)
+        self.diag_exp_inv = lambda x: torch.log(torch.abs(x+1e-6))
+        self.offdiag_sigmoid = lambda x: torch.sigmoid(x) * 2.0 - 1.0
+        # self.offdiag_tanh = lambda x: torch.tanh(x)
+        self.offdiag_sigmoid_inv = lambda x: inverse_sigmoid(torch.clip((x+1.0)/2.0, min=1e-6, max=1.0-1e-6))
+        
         self.scaling_activation = torch.exp
         self.scaling_inverse_activation = torch.log
 
@@ -98,7 +104,7 @@ class GaussianModel:
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
-
+    
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
@@ -145,7 +151,16 @@ class GaussianModel:
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
-
+    
+    def create_cholesky(self, diag:torch.Tensor, offdiag:torch.Tensor) -> torch.Tensor:
+        # input : diag (N, 6), offdiag (N, 15)
+        # output : covariance LL^T (N, 6, 6)
+        L = torch.diag_embed(diag) # (N, 6, 6)
+        dim = diag.shape[1] # 6
+        tril_indices = torch.tril_indices(dim, dim, offset=-1, device=diag.device) # (2, 15)
+        L[:, tril_indices[0], tril_indices[1]] = offdiag
+        return torch.bmm(L, L.transpose(-1, -2))
+    
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
@@ -156,18 +171,30 @@ class GaussianModel:
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
-        dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
-        scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
-        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
-        rots[:, 0] = 1
+        dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001) # (N,)
+        scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3) # (N, 3)
+        # rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda") # (N, 4)
+        # rots[:, 0] = 1
 
-        opacities = self.inverse_opacity_activation(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+        opacities = self.inverse_opacity_activation(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda")) # (N, 1)
 
+        # self.diag : (N, 6) 
+        # self.diag[:, :3] : diagonal of positional covariance, so intialize with distance-based scales
+        # self.diag[:, 3:] : diagonal of directional covariance, so initialize with one
+        diag = self.diag_exp_inv(torch.cat([torch.ones([fused_point_cloud.shape[0], 3], device="cuda") * scales, torch.ones([fused_point_cloud.shape[0], 3], device="cuda")], dim=-1)) # (N, 6)
+        # self.offdiag : (N, 15)
+        offdiag = self.offdiag_sigmoid_inv(torch.zeros([fused_point_cloud.shape[0], 15], device="cuda")) # (N, 15)
+        
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
-        self._scaling = nn.Parameter(scales.requires_grad_(True))
-        self._rotation = nn.Parameter(rots.requires_grad_(True))
+        # Not to modify original 3DGS code much, 
+        # set self._scaling as diag of covariance (N, 6)
+        # set self._rotation as offdiag of covariance (N, 15)
+        self._scaling = nn.Parameter(diag.requires_grad_(True))
+        self._rotation = nn.Parameter(offdiag.requires_grad_(True))
+        # self._scaling = nn.Parameter(scales.requires_grad_(True))
+        # self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
         self.exposure_mapping = {cam_info.image_name: idx for idx, cam_info in enumerate(cam_infos)}
@@ -310,7 +337,6 @@ class GaussianModel:
         self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
-
         self.active_sh_degree = self.max_sh_degree
 
     def replace_tensor_to_optimizer(self, tensor, name):
