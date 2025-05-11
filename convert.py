@@ -26,7 +26,8 @@ parser.add_argument("--magick_executable", default="", type=str)
 args = parser.parse_args()
 colmap_command = '"{}"'.format(args.colmap_executable) if len(args.colmap_executable) > 0 else "colmap"
 magick_command = '"{}"'.format(args.magick_executable) if len(args.magick_executable) > 0 else "magick"
-use_gpu = 1 if not args.no_gpu else 0
+# use_gpu = 1 if not args.no_gpu else 0
+use_gpu = 0 # modified
 
 if not args.skip_matching:
     os.makedirs(args.source_path + "/distorted/sparse", exist_ok=True)
