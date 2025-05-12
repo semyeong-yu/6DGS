@@ -189,7 +189,25 @@ class GaussianModel:
         alpha_cond = self.get_opacity * torch.exp(- lambda_opa * torch.einsum('bi,bij,bj->b', diff_d, cov_d_inv, diff_d).unsqueeze(-1)) # (N, 1)
         
         return mu_cond, cov_cond, alpha_cond # (N, 3), (N, 6), (N, 1)
-        
+
+    ### cov_cond -> s, R
+    def extract_SR(self, cov_cond):
+        cov_mat = torch.zeros(cov_cond.shape[0], 3, 3, device=cov_cond.device)
+        cov_mat[:, 0, 0] = cov_cond[:, 0]
+        cov_mat[:, 0, 1] = cov_mat[:, 1, 0] = cov_cond[:, 1]
+        cov_mat[:, 0, 2] = cov_mat[:, 2, 0] = cov_cond[:, 2]
+        cov_mat[:, 1, 1] = cov_cond[:, 3]
+        cov_mat[:, 1, 2] = cov_mat[:, 2, 1] = cov_cond[:, 4]
+        cov_mat[:, 2, 2] = cov_cond[:, 5]
+        U, D, _ = torch.linalg.svd(cov_mat)
+    
+        scale = torch.diag_embed(torch.sqrt(D))
+        rotation = U.clone()
+        det_R = torch.det(rotation)
+        rotation[:, :, 2] = rotation[:, :, 2] * det_R.sign().unsqueeze(-1)
+
+        return scale, rotation # (N, 3, 3), (N, 3, 3)
+
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
