@@ -65,7 +65,7 @@ class ModelParams(ParamGroup):
 
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
-        self.convert_SHs_python = True
+        self.convert_SHs_python = True # 6DGS
         self.compute_cov3D_python = True
         self.debug = False
         self.antialiasing = False
