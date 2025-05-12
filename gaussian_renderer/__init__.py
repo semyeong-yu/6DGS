@@ -78,6 +78,12 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
+            
+            ### 6DGS
+            mu_cond, cov_cond, alpha_cond = pc.slice_gaussian(dir_pp_normalized)
+            means3D = mu_cond
+            opacity = alpha_cond
+            scales, rotations = pc.extract_SR(cov_cond)
         else:
             if separate_sh:
                 dc, shs = pc.get_features_dc, pc.get_features_rest
