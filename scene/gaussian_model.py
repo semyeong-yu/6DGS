@@ -37,12 +37,20 @@ class GaussianModel:
         #     return symm
         def build_covariance_from_scaling_rotation(diag:torch.Tensor, offdiag:torch.Tensor) -> torch.Tensor:
             # input : diag (N, 6), offdiag (N, 15)
-            # output : covariance LL^T (N, 6, 6)
             L = torch.diag_embed(diag) # (N, 6, 6)
             dim = diag.shape[1] # 6
             tril_indices = torch.tril_indices(dim, dim, offset=-1, device=diag.device) # (2, 15)
             L[:, tril_indices[0], tril_indices[1]] = offdiag
-            return torch.bmm(L, L.transpose(-1, -2))
+            
+            cov = torch.bmm(L, L.transpose(-1, -2)) # 6D covariance LL^T (N, 6, 6)
+        
+            cov_p = cov[:, :dim, :dim] # (N, 3, 3)
+            cov_pd = cov[:, :dim, dim:] # (N, 3, 3)
+            cov_d = cov[:, dim:, dim:] # (N, 3, 3)
+            cov_d_inv = torch.linalg.inv(cov_d) # (N, 3, 3)
+            
+            cov_cond = cov_p - torch.bmm(torch.bmm(cov_pd, cov_d_inv), cov_pd.transpose(1, 2)) # 3D conditional covariance (N, 3, 3)
+            return cov_cond, cov
         
         self.scaling_activation = lambda x: torch.exp(x)
         self.scaling_inverse_activation = lambda x: torch.log(torch.abs(x+1e-6))
@@ -161,25 +169,16 @@ class GaussianModel:
     
     def get_covariance(self, scaling_modifier = 1):
         # return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
-        return self.covariance_activation(self.get_scaling, self.get_rotation)
+        return self.covariance_activation(self.get_scaling, self.get_rotation) # 3D conditional covariance
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
     
     ### modified
-    def cov6D_from_diag_offdiag(self, diag:torch.Tensor, offdiag:torch.Tensor) -> torch.Tensor:
-        # input : diag (N, 6), offdiag (N, 15)
-        # output : covariance LL^T (N, 6, 6)
-        L = torch.diag_embed(diag) # (N, 6, 6)
-        dim = diag.shape[1] # 6
-        tril_indices = torch.tril_indices(dim, dim, offset=-1, device=diag.device) # (2, 15)
-        L[:, tril_indices[0], tril_indices[1]] = offdiag
-        return torch.bmm(L, L.transpose(-1, -2))
-    
-    def slice_gaussian(self, q, lambda):
+    def slice_gaussian(self, d, lambda_opa):
         dim = 3
-        cov = self.cov6D_from_diag_offdiag(self.get_scaling, self.get_rotation) # (N, 6, 6)
+        cov_cond, cov = self.get_covariance(self.get_scaling, self.get_rotation) # (N, 6, 6)
         cov_p = cov[:, :dim, :dim] # (N, 3, 3)
         cov_pd = cov[:, :dim, dim:] # (N, 3, 3)
         cov_d = cov[:, dim:, dim:] # (N, 3, 3)
@@ -188,9 +187,8 @@ class GaussianModel:
         mu_p = self.get_xyz
         mu_d = self.get_normal
         
-        return pass
+        return mu_cond, cov_cond, alpha_cond
         
-    
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
@@ -472,7 +470,7 @@ class GaussianModel:
         "scaling" : new_scaling,
         "rotation" : new_rotation}
 
-        optimizable_tensors = self.cat_tensors_to_optimizer(d)
+        optimizable_tensors = self.cat_tensors_to_optimizer(d) # add new attribute to existing attribute
         self._xyz = optimizable_tensors["xyz"]
         self._normal = optimizable_tensors["normal"]
         self._features_dc = optimizable_tensors["f_dc"]
@@ -501,7 +499,7 @@ class GaussianModel:
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
-        new_normal = pass # 그대로 after densification? TBD
+        new_normal = self.get_normal[selected_pts_mask].repeat(N, 1) # do not change direction after densification
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
@@ -511,7 +509,7 @@ class GaussianModel:
 
         self.densification_postfix(new_xyz, new_normal, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_tmp_radii)
 
-        prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
+        prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool))) # remove existing selected points and maintain new N * selected points
         self.prune_points(prune_filter)
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
