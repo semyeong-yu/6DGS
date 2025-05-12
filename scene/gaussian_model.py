@@ -21,7 +21,6 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-from scipy.spatial.transform import Rotation as R
 
 try:
     from diff_gaussian_rasterization import SparseGaussianAdam
@@ -209,10 +208,53 @@ class GaussianModel:
 
         return scale, rotation # (N, 3, 3), (N, 3, 3)
     
+    ### (N, 3, 3) -> (N, 4)
+    def rotation_to_quaternion(self, rotation):
+        quat = torch.zeros((rotation.shape[0], 4), device=rotation.device, dtype=rotation.dtype) # (N, 4)
+
+        trace = rotation[:, 0, 0] + rotation[:, 1, 1] + rotation[:, 2, 2]  # (N,)
+
+        # Case 1: trace > 0
+        cond1 = trace > 0
+        s1 = torch.sqrt(trace[cond1] + 1.0) * 2
+        quat[cond1, 0] = 0.25 * s1
+        quat[cond1, 1] = (rotation[cond1, 2, 1] - rotation[cond1, 1, 2]) / s1
+        quat[cond1, 2] = (rotation[cond1, 0, 2] - rotation[cond1, 2, 0]) / s1
+        quat[cond1, 3] = (rotation[cond1, 1, 0] - rotation[cond1, 0, 1]) / s1
+
+        # Case 2: rotation[0,0] is the largest diagonal term
+        cond2 = (rotation[:, 0, 0] > rotation[:, 1, 1]) & (rotation[:, 0, 0] > rotation[:, 2, 2]) & ~cond1
+        s2 = torch.sqrt(1.0 + rotation[cond2, 0, 0] - rotation[cond2, 1, 1] - rotation[cond2, 2, 2]) * 2
+        quat[cond2, 0] = (rotation[cond2, 2, 1] - rotation[cond2, 1, 2]) / s2
+        quat[cond2, 1] = 0.25 * s2
+        quat[cond2, 2] = (rotation[cond2, 0, 1] + rotation[cond2, 1, 0]) / s2
+        quat[cond2, 3] = (rotation[cond2, 0, 2] + rotation[cond2, 2, 0]) / s2
+
+        # Case 3: rotation[1,1] is the largest diagonal term
+        cond3 = (rotation[:, 1, 1] > rotation[:, 2, 2]) & ~cond1 & ~cond2
+        s3 = torch.sqrt(1.0 + rotation[cond3, 1, 1] - rotation[cond3, 0, 0] - rotation[cond3, 2, 2]) * 2
+        quat[cond3, 0] = (rotation[cond3, 0, 2] - rotation[cond3, 2, 0]) / s3
+        quat[cond3, 1] = (rotation[cond3, 0, 1] + rotation[cond3, 1, 0]) / s3
+        quat[cond3, 2] = 0.25 * s3
+        quat[cond3, 3] = (rotation[cond3, 1, 2] + rotation[cond3, 2, 1]) / s3
+
+        # Case 4: rotation[2,2] is the largest diagonal term
+        cond4 = ~cond1 & ~cond2 & ~cond3
+        s4 = torch.sqrt(1.0 + rotation[cond4, 2, 2] - rotation[cond4, 0, 0] - rotation[cond4, 1, 1]) * 2
+        quat[cond4, 0] = (rotation[cond4, 1, 0] - rotation[cond4, 0, 1]) / s4
+        quat[cond4, 1] = (rotation[cond4, 0, 2] + rotation[cond4, 2, 0]) / s4
+        quat[cond4, 2] = (rotation[cond4, 1, 2] + rotation[cond4, 2, 1]) / s4
+        quat[cond4, 3] = 0.25 * s4
+
+        return quat
+
     ### (N, 3, 3), (N, 3, 3) -> (N, 3), (N, 4)
-    def convert_matrix_vector(self, scale, rotation):
+    def matrix_to_vector(self, scale, rotation):
+        # rotation = torch.tensor([[ 0.9773, -0.1745,  0.1194], [ 0.1794,  0.9837, -0.0112], [-0.1161,  0.0323,  0.9927]], device=scale.device).unsqueeze(0)
         scale_vec = torch.stack([scale[:, 0, 0], scale[:, 1, 1], scale[:, 2, 2]], dim=1) # (N, 3)
-        rotation_vec = R.from_matrix(rotation).as_quat() # (N, 4)
+        rotation_vec = self.rotation_to_quaternion(rotation) # (N, 4)
+        # print("original rotation from SVD", rotation[0])
+        # print("original rotation > quaternion > rotation", build_rotation(rotation_vec)[0])
         return scale_vec, rotation_vec
 
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
@@ -267,7 +309,7 @@ class GaussianModel:
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-            {'params': [self._normal], 'lr': training_args.direction_lr_init * self.direction_lr_scale, "name": "normal"},
+            {'params': [self._normal], 'lr': training_args.direction_lr_init, "name": "normal"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
@@ -291,8 +333,8 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
         
-        self.normal_scheduler_args = get_expon_lr_func(lr_init=training_args.direction_lr_init*self.direction_lr_scale,
-                                                    lr_final=training_args.direction_lr_final*self.direction_lr_scale,
+        self.normal_scheduler_args = get_expon_lr_func(lr_init=training_args.direction_lr_init,
+                                                    lr_final=training_args.direction_lr_final,
                                                     lr_delay_mult=training_args.direction_lr_delay_mult,
                                                     max_steps=training_args.direction_lr_max_steps)
         
@@ -556,7 +598,7 @@ class GaussianModel:
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, radii):
         cov_cond = self.get_covariance()[0] # (N, 6)
         scale_mat, rotation_mat = self.extract_SR(cov_cond) # (N, 3, 3), (N, 3, 3)
-        scale, rotation = self.convert_matrix_vector(scale_mat, rotation_mat) # (N, 3), (N, 4)
+        scale, rotation = self.matrix_to_vector(scale_mat, rotation_mat) # (N, 3), (N, 4)
 
         grads = self.xyz_gradient_accum / self.denom # do not reflect self.normal_gradient_accum into grads
         grads[grads.isnan()] = 0.0

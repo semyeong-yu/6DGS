@@ -84,7 +84,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             means3D = mu_cond
             opacity = alpha_cond
             scale_temp, rotation_temp = pc.extract_SR(cov_cond)
-            scales, rotations = pc.convert_matrix_vector(scale_temp, rotation_temp)
+            scales, rotations = pc.matrix_to_vector(scale_temp, rotation_temp)
         else:
             if separate_sh:
                 dc, shs = pc.get_features_dc, pc.get_features_rest
