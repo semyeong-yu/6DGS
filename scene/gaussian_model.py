@@ -49,7 +49,8 @@ class GaussianModel:
             cov_d = cov[:, dim:, dim:] # (N, 3, 3)
             cov_d_inv = torch.linalg.inv(cov_d) # (N, 3, 3)
             
-            cov_cond = cov_p - torch.bmm(torch.bmm(cov_pd, cov_d_inv), cov_pd.transpose(1, 2)) # 3D conditional covariance (N, 3, 3)
+            cov_cond_full = cov_p - torch.bmm(torch.bmm(cov_pd, cov_d_inv), cov_pd.transpose(1, 2)) # 3D conditional covariance (N, 3, 3)
+            cov_cond = torch.stack([cov_cond_full[:, 0, 0].abs(), cov_cond_full[:, 0, 1], cov_cond_full[:, 0, 2], cov_cond_full[:, 1, 1].abs(), cov_cond_full[:, 1, 2], cov_cond_full[:, 2, 2].abs()], dim=1) # (N, 6)
             return cov_cond, cov
         
         self.scaling_activation = lambda x: torch.exp(x)
@@ -77,7 +78,6 @@ class GaussianModel:
         self._opacity = torch.empty(0)
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
-        self.normal_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None
         self.percent_dense = 0
@@ -96,7 +96,6 @@ class GaussianModel:
             self._opacity,
             self.max_radii2D,
             self.xyz_gradient_accum,
-            self.normal_gradient_accum,
             self.denom,
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
@@ -113,13 +112,11 @@ class GaussianModel:
         self._opacity,
         self.max_radii2D, 
         xyz_gradient_accum,
-        normal_gradient_accum, 
         denom,
         opt_dict, 
         self.spatial_lr_scale) = model_args
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
-        self.normal_gradient_accum = normal_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
     
@@ -176,9 +173,9 @@ class GaussianModel:
             self.active_sh_degree += 1
     
     ### modified
-    def slice_gaussian(self, d, lambda_opa):
+    def slice_gaussian(self, d, lambda_opa=0.35):
         dim = 3
-        cov_cond, cov = self.get_covariance(self.get_scaling, self.get_rotation) # (N, 6, 6)
+        cov_cond, cov = self.get_covariance(self.get_scaling, self.get_rotation) # (N, 6), (N, 6, 6)
         cov_p = cov[:, :dim, :dim] # (N, 3, 3)
         cov_pd = cov[:, :dim, dim:] # (N, 3, 3)
         cov_d = cov[:, dim:, dim:] # (N, 3, 3)
@@ -186,8 +183,12 @@ class GaussianModel:
         
         mu_p = self.get_xyz
         mu_d = self.get_normal
+        diff_d = d - mu_d # (N, 3)
         
-        return mu_cond, cov_cond, alpha_cond
+        mu_cond = mu_p + torch.bmm(torch.bmm(cov_pd, cov_d_inv), diff_d.unsqueeze(-1)).squeeze(-1) # (N, 3)
+        alpha_cond = self.get_opacity * torch.exp(- lambda_opa * torch.einsum('bi,bij,bj->b', diff_d, cov_d_inv, diff_d).unsqueeze(-1)) # (N, 1)
+        
+        return mu_cond, cov_cond, alpha_cond # (N, 3), (N, 6), (N, 1)
         
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
@@ -237,7 +238,6 @@ class GaussianModel:
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.normal_gradient_accum = torch.zeros((self.get_normal.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
         l = [
@@ -433,7 +433,6 @@ class GaussianModel:
         self._rotation = optimizable_tensors["rotation"]
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
-        self.normal_gradient_accum = self.normal_gradient_accum[valid_points_mask]
 
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
@@ -481,7 +480,6 @@ class GaussianModel:
 
         self.tmp_radii = torch.cat((self.tmp_radii, new_tmp_radii))
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.normal_gradient_accum = torch.zeros((self.get_normal.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
@@ -531,7 +529,7 @@ class GaussianModel:
         self.densification_postfix(new_xyz, new_normal, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, radii):
-        grads = self.xyz_gradient_accum / self.denom # reflect self.normal_gradient_accum into grads? TBD
+        grads = self.xyz_gradient_accum / self.denom # do not reflect self.normal_gradient_accum into grads
         grads[grads.isnan()] = 0.0
 
         self.tmp_radii = radii
@@ -551,5 +549,4 @@ class GaussianModel:
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
-        self.normal_gradient_accum[update_filter] += torch.norm(TBD.grad[update_filter, :2], dim=-1, keepdim=True) # TBD
         self.denom[update_filter] += 1
