@@ -51,9 +51,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    means3D = pc.get_xyz
+    means3D = pc.get_xyz # deprecated
     means2D = screenspace_points
-    opacity = pc.get_opacity
+    opacity = pc.get_opacity # deprecated
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
@@ -62,10 +62,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     cov3D_precomp = None
 
     if pipe.compute_cov3D_python:
-        cov3D_precomp = pc.get_covariance(scaling_modifier)
+        cov3D_precomp = pc.get_covariance(scaling_modifier)[0] # 3D conditional covariance
     else:
-        scales = pc.get_scaling
-        rotations = pc.get_rotation
+        scales = pc.get_scaling # deprecated
+        rotations = pc.get_rotation # deprecated
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
@@ -78,6 +78,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
+            
+            ### 6DGS
+            mu_cond, cov_cond, alpha_cond = pc.slice_gaussian(dir_pp_normalized)
+            means3D = mu_cond
+            opacity = alpha_cond
+            # scale_temp, rotation_temp = pc.extract_SR(cov_cond)
+            # scales, rotations = pc.matrix_to_vector(scale_temp, rotation_temp)
         else:
             if separate_sh:
                 dc, shs = pc.get_features_dc, pc.get_features_rest
