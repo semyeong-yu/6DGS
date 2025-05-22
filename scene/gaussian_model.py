@@ -600,14 +600,22 @@ class GaussianModel:
         scale_mat, rotation_mat = self.extract_SR(cov_cond) # (N, 3, 3), (N, 3, 3)
         scale, rotation = self.matrix_to_vector(scale_mat, rotation_mat) # (N, 3), (N, 4)
 
-        grads = self.xyz_gradient_accum / self.denom # do not reflect self.normal_gradient_accum into grads
-        grads[grads.isnan()] = 0.0
+        grads = self.xyz_gradient_accum / self.denom # do not reflect self.normal_gradient_accum into grads 
+        grads[grads.isnan()] = 0.0  
 
         self.tmp_radii = radii
-        self.densify_and_clone(scale, rotation, grads, max_grad, extent)
-        self.densify_and_split(scale, rotation, grads, max_grad, extent)
+        self.densify_and_clone(scale, rotation, grads, max_grad, extent) # grads (N',1)
+        cov_cond = self.get_covariance()[0] # (N', 6)
+        scale_mat, rotation_mat = self.extract_SR(cov_cond) # (N', 3, 3), (N', 3, 3)
+        scale, rotation = self.matrix_to_vector(scale_mat, rotation_mat) # (N', 3), (N', 4)
+
+        self.densify_and_split(scale, rotation, grads, max_grad, extent) # (N", 1)
+        cov_cond = self.get_covariance()[0] # (N", 6)
+        scale_mat, rotation_mat = self.extract_SR(cov_cond) # (N", 3, 3), (N", 3, 3)
+        scale, rotation = self.matrix_to_vector(scale_mat, rotation_mat) # (N", 3), (N", 4)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
+
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = scale.max(dim=1).values > 0.1 * extent
