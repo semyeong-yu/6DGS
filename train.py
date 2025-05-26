@@ -22,6 +22,7 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from datetime import datetime
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -195,7 +196,7 @@ def prepare_output_and_logger(args):
             unique_str=os.getenv('OAR_JOB_ID')
         else:
             unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output/", unique_str[0:10])
+        args.model_path = os.path.join("./output", unique_str[0:10])
         
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
@@ -270,6 +271,8 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
+    date = datetime.now().strftime("%m%d_%H%M")
+    args.model_path = os.path.join(args.model_path, date)
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)

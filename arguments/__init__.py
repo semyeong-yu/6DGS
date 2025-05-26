@@ -47,8 +47,8 @@ class ParamGroup:
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
-        self._source_path = ""
-        self._model_path = ""
+        self._source_path = "/home/kaist/semyeong/data/static/mipnerf360/bicycle"
+        self._model_path = "/home/kaist/semyeong/hdd/output/6dgs/mipnerf360/bicycle"
         self._images = "images"
         self._depths = ""
         self._resolution = -1
@@ -66,7 +66,7 @@ class ModelParams(ParamGroup):
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
         self.convert_SHs_python = True  # 6DGS
-        self.compute_cov3D_python = False
+        self.compute_cov3D_python = True # 6DGS
         self.debug = False
         self.antialiasing = False
         super().__init__(parser, "Pipeline Parameters")
@@ -84,8 +84,8 @@ class OptimizationParams(ParamGroup):
         self.direction_lr_max_steps = 30_000
         self.feature_lr = 0.0025
         self.opacity_lr = 0.025
-        self.scaling_lr = 0.005 # diag # 6DGS
-        self.rotation_lr = 0.001 # offdiag # 6DGS
+        self.scaling_lr = 0.0001 # diag # 6DGS
+        self.rotation_lr = 0.0001 # offdiag # 6DGS
         self.exposure_lr_init = 0.01
         self.exposure_lr_final = 0.001
         self.exposure_lr_delay_steps = 0

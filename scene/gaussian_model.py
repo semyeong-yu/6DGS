@@ -166,7 +166,7 @@ class GaussianModel:
     
     def get_covariance(self, scaling_modifier = 1):
         # return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
-        return self.covariance_activation(self.get_scaling, self.get_rotation) # diag, offdiag -> 3D conditional covariance
+        return self.covariance_activation(self.get_scaling, self.get_rotation) # diag, offdiag -> 3D conditional covariance (N, 6), 6D covariance (N, 6, 6)
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
@@ -274,11 +274,11 @@ class GaussianModel:
 
         opacities = self.inverse_opacity_activation(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda")) # (N, 1)
 
-        # self.diag : (N, 6) 
+        # self.diag (N, 6) 
         # self.diag[:, :3] : diagonal of positional covariance, so intialize with distance-based scales
         # self.diag[:, 3:] : diagonal of directional covariance, so initialize with one
         diag = self.scaling_inverse_activation(torch.cat([torch.ones([fused_point_cloud.shape[0], 3], device="cuda") * scales, torch.ones([fused_point_cloud.shape[0], 3], device="cuda")], dim=-1)) # (N, 6)
-        # self.offdiag : (N, 15)
+        # self.offdiag (N, 15) : initialize with zero
         offdiag = self.rotation_inverse_activation(torch.zeros([fused_point_cloud.shape[0], 15], device="cuda")) # (N, 15)
         
         normal = torch.randn(fused_point_cloud.shape[0], 3, device="cuda")
