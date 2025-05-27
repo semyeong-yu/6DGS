@@ -48,7 +48,7 @@ class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = "/data1/semyu/static/mipnerf360/bicycle"
-        self._model_path = "" # CUDA_VISIBLE_DEVICES=0 python train.py
+        self._model_path = "/data3/semyu/output/6dgs/mipnerf360/bicycle" # CUDA_VISIBLE_DEVICES=0 python train.py -m /data3/semyu/output/6dgs/mipnerf360/bicycle
         # self._model_path = "/data3/semyu/output/6dgs/mipnerf360/bicycle/0526_1502" # CUDA_VISIBLE_DEVICES=0 python render.py -m /data3/semyu/output/6dgs/mipnerf360/bicycle/0526_1502
         self._images = "images"
         self._depths = ""

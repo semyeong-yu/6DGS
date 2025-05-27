@@ -169,7 +169,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.01, scene.cameras_extent, size_threshold, radii)
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -191,15 +191,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 def prepare_output_and_logger(args):    
-    if not args.model_path:
-        # if os.getenv('OAR_JOB_ID'):
-        #     unique_str=os.getenv('OAR_JOB_ID')
-        # else:
-        #     unique_str = str(uuid.uuid4())
-        date = datetime.now().strftime("%m%d_%H%M")
-        print("Optimizing " + args.model_path)
-        args.model_path = os.path.join("/data3/semyu/output/6dgs/custom/monkeyshiba", date)
-        
+    # if os.getenv('OAR_JOB_ID'):
+    #     unique_str=os.getenv('OAR_JOB_ID')
+    # else:
+    #     unique_str = str(uuid.uuid4())
+    date = datetime.now().strftime("%m%d_%H%M")
+    args.model_path = os.path.join(args.model_path, date)
+    print("Optimizing " + args.model_path)
+    
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok = True)
