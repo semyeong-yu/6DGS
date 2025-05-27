@@ -192,11 +192,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
-        if os.getenv('OAR_JOB_ID'):
-            unique_str=os.getenv('OAR_JOB_ID')
-        else:
-            unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output", unique_str[0:10])
+        # if os.getenv('OAR_JOB_ID'):
+        #     unique_str=os.getenv('OAR_JOB_ID')
+        # else:
+        #     unique_str = str(uuid.uuid4())
+        date = datetime.now().strftime("%m%d_%H%M")
+        print("Optimizing " + args.model_path)
+        args.model_path = os.path.join("/data3/semyu/output/6dgs/custom/monkeyshiba", date)
         
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
@@ -266,14 +268,10 @@ if __name__ == "__main__":
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument('--disable_viewer', action='store_true', default=False)
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
-    
-    date = datetime.now().strftime("%m%d_%H%M")
-    args.model_path = os.path.join(args.model_path, date)
-    print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)

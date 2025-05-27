@@ -37,6 +37,7 @@ class GaussianModel:
         #     return symm
         def build_covariance_from_scaling_rotation(diag:torch.Tensor, offdiag:torch.Tensor) -> torch.Tensor:
             # input : diag (N, 6), offdiag (N, 15)
+            assert diag.shape[1] == 6 and offdiag.shape[1] == 15, "diag must have shape (N, 6)"
             L = torch.diag_embed(diag) # (N, 6, 6)
             dim = diag.shape[1] # 6
             tril_indices = torch.tril_indices(dim, dim, offset=-1, device=diag.device) # (2, 15)
@@ -44,9 +45,9 @@ class GaussianModel:
             
             cov = torch.bmm(L, L.transpose(-1, -2)) # 6D covariance LL^T (N, 6, 6)
         
-            cov_p = cov[:, :dim, :dim] # (N, 3, 3)
-            cov_pd = cov[:, :dim, dim:] # (N, 3, 3)
-            cov_d = cov[:, dim:, dim:] # (N, 3, 3)
+            cov_p = cov[:, :3, :3] # (N, 3, 3)
+            cov_pd = cov[:, :3, 3:] # (N, 3, 3)
+            cov_d = cov[:, 3:, 3:] # (N, 3, 3)
             cov_d_inv = torch.linalg.inv(cov_d) # (N, 3, 3)
             
             cov_cond_full = cov_p - torch.bmm(torch.bmm(cov_pd, cov_d_inv), cov_pd.transpose(1, 2)) # 3D conditional covariance (N, 3, 3)
@@ -333,10 +334,10 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
         
-        self.normal_scheduler_args = get_expon_lr_func(lr_init=training_args.direction_lr_init,
-                                                    lr_final=training_args.direction_lr_final,
-                                                    lr_delay_mult=training_args.direction_lr_delay_mult,
-                                                    max_steps=training_args.direction_lr_max_steps)
+        # self.normal_scheduler_args = get_expon_lr_func(lr_init=training_args.direction_lr_init,
+        #                                             lr_final=training_args.direction_lr_final,
+        #                                             lr_delay_mult=training_args.direction_lr_delay_mult,
+        #                                             max_steps=training_args.direction_lr_max_steps)
         
         self.exposure_scheduler_args = get_expon_lr_func(training_args.exposure_lr_init, training_args.exposure_lr_final,
                                                         lr_delay_steps=training_args.exposure_lr_delay_steps,
@@ -354,10 +355,10 @@ class GaussianModel:
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
                 return lr
-            elif param_group["name"] == "normal":
-                lr = self.normal_scheduler_args(iteration)
-                param_group['lr'] = lr
-                return lr
+            # elif param_group["name"] == "normal":
+            #     lr = self.normal_scheduler_args(iteration)
+            #     param_group['lr'] = lr
+            #     return lr
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']

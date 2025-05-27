@@ -47,8 +47,9 @@ class ParamGroup:
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
-        self._source_path = "/home/kaist/semyeong/data/static/mipnerf360/bicycle"
-        self._model_path = "/home/kaist/semyeong/hdd/output/6dgs/mipnerf360/bicycle"
+        self._source_path = "/data1/semyu/static/mipnerf360/bicycle"
+        self._model_path = "" # CUDA_VISIBLE_DEVICES=0 python train.py
+        # self._model_path = "/data3/semyu/output/6dgs/mipnerf360/bicycle/0526_1502" # CUDA_VISIBLE_DEVICES=0 python render.py -m /data3/semyu/output/6dgs/mipnerf360/bicycle/0526_1502
         self._images = "images"
         self._depths = ""
         self._resolution = -1
@@ -78,14 +79,13 @@ class OptimizationParams(ParamGroup):
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
         self.position_lr_max_steps = 30_000
-        self.direction_lr_init = 0.00016 # 6DGS
-        self.direction_lr_final = 0.0000016
-        self.direction_lr_delay_mult = 0.01
-        self.direction_lr_max_steps = 30_000
+        self.direction_lr_init = 0.001 # 6DGS
+        # self.direction_lr_final = 0.00001 # 6DGS
+        # self.direction_lr_max_steps = 30_000
         self.feature_lr = 0.0025
         self.opacity_lr = 0.025
-        self.scaling_lr = 0.0001 # diag # 6DGS
-        self.rotation_lr = 0.0001 # offdiag # 6DGS
+        self.scaling_lr = 0.01 # diag # 6DGS
+        self.rotation_lr = 0.01 # offdiag # 6DGS
         self.exposure_lr_init = 0.01
         self.exposure_lr_final = 0.001
         self.exposure_lr_delay_steps = 0
