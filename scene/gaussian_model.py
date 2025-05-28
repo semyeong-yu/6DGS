@@ -334,10 +334,9 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
         
-        # self.normal_scheduler_args = get_expon_lr_func(lr_init=training_args.direction_lr_init,
-        #                                             lr_final=training_args.direction_lr_final,
-        #                                             lr_delay_mult=training_args.direction_lr_delay_mult,
-        #                                             max_steps=training_args.direction_lr_max_steps)
+        self.normal_scheduler_args = get_expon_lr_func(lr_init=training_args.direction_lr_init,
+                                                    lr_final=training_args.direction_lr_final,
+                                                    max_steps=training_args.direction_lr_max_steps)
         
         self.exposure_scheduler_args = get_expon_lr_func(training_args.exposure_lr_init, training_args.exposure_lr_final,
                                                         lr_delay_steps=training_args.exposure_lr_delay_steps,
@@ -355,10 +354,10 @@ class GaussianModel:
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
                 return lr
-            # elif param_group["name"] == "normal":
-            #     lr = self.normal_scheduler_args(iteration)
-            #     param_group['lr'] = lr
-            #     return lr
+            elif param_group["name"] == "normal":
+                lr = self.normal_scheduler_args(iteration)
+                param_group['lr'] = lr
+                return lr
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
@@ -395,7 +394,7 @@ class GaussianModel:
         PlyData([el]).write(path)
 
     def reset_opacity(self):
-        opacities_new = self.inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.5)) # 0.01
+        opacities_new = self.inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
