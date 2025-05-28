@@ -91,8 +91,10 @@ class OptimizationParams(ParamGroup):
         self.opacity_lr = 0.025
 
         # 6d gs custom?
-        self.scaling_lr = 0.005 # diag # 6DGS
-        self.rotation_lr = 0.001 # offdiag # 6DGS
+        # self.scaling_lr = 0.005 # diag # 6DGS 
+        self.scaling_lr = 0.01 # diag # 6DGS 
+        # self.rotation_lr = 0.001 # offdiag # 6DGS
+        self.rotation_lr = 0.01 # offdiag # 6DGS
 
         self.exposure_lr_init = 0.01
         self.exposure_lr_final = 0.001
