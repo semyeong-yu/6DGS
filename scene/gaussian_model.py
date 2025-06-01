@@ -41,7 +41,7 @@ class GaussianModel:
             L = torch.diag_embed(diag) # (N, 6, 6)
             dim = diag.shape[1] # 6
             tril_indices = torch.tril_indices(dim, dim, offset=-1, device=diag.device) # (2, 15)
-            L[:, tril_indices[0], tril_indices[1]] = offdiag
+            L[:, tril_indices[0], tril_indices[1]] = offdiag.view(diag.size(0), -1) * diag[:, tril_indices[0]]
             
             cov = torch.bmm(L, L.transpose(-1, -2)) # 6D covariance LL^T (N, 6, 6)
         
@@ -51,7 +51,8 @@ class GaussianModel:
             cov_d_inv = torch.linalg.inv(cov_d) # (N, 3, 3)
             
             cov_cond_full = cov_p - torch.bmm(torch.bmm(cov_pd, cov_d_inv), cov_pd.transpose(1, 2)) # 3D conditional covariance (N, 3, 3)
-            cov_cond = torch.stack([cov_cond_full[:, 0, 0].abs(), cov_cond_full[:, 0, 1], cov_cond_full[:, 0, 2], cov_cond_full[:, 1, 1].abs(), cov_cond_full[:, 1, 2], cov_cond_full[:, 2, 2].abs()], dim=1) # (N, 6)
+            cov_cond = torch.stack([cov_cond_full[:, 0, 0].abs(), cov_cond_full[:, 0, 1], cov_cond_full[:, 0, 2], 
+                                    cov_cond_full[:, 1, 1].abs(), cov_cond_full[:, 1, 2], cov_cond_full[:, 2, 2].abs()], dim=1) # (N, 6)
             return cov_cond, cov
         
         self.scaling_activation = lambda x: torch.exp(x)
