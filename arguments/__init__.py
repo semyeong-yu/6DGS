@@ -47,8 +47,8 @@ class ParamGroup:
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
-        self._source_path = "/data1/semyu/static/6dgs-pbr/bunny_cloud"
-        self._model_path = "/data3/semyu/output/6dgs/6dgs-pbr/bunny_cloud" # CUDA_VISIBLE_DEVICES=0 python train.py -m /data3/semyu/output/6dgs/mipnerf360/bicycle
+        self._source_path = ""
+        self._model_path = "output" # CUDA_VISIBLE_DEVICES=0 python train.py -m /data3/semyu/output/6dgs/mipnerf360/bicycle
         # self._model_path = "/data3/semyu/output/6dgs/mipnerf360/bicycle/0526_1502" # CUDA_VISIBLE_DEVICES=0 python render.py -m /data3/semyu/output/6dgs/mipnerf360/bicycle/0526_1502
         self._images = "images"
         self._depths = ""
@@ -84,8 +84,8 @@ class OptimizationParams(ParamGroup):
         self.direction_lr_max_steps = 30_000
         self.feature_lr = 0.0025
         self.opacity_lr = 0.025
-        self.scaling_lr = 0.001 # 0.01 # diag # 6DGS
-        self.rotation_lr = 0.001 # 0.01 # offdiag # 6DGS
+        self.scaling_lr = 0.01 # 0.01 # diag # 6DGS
+        self.rotation_lr = 0.01 # 0.01 # offdiag # 6DGS
         self.exposure_lr_init = 0.01
         self.exposure_lr_final = 0.001
         self.exposure_lr_delay_steps = 0

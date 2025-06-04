@@ -256,8 +256,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
 
         if tb_writer:
-            tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
-            tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
+            try:
+                tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+            except: print("opacity_histogram skip")
+            try:
+                tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
+            except: print("total_points skip")
         torch.cuda.empty_cache()
 
 if __name__ == "__main__":
@@ -270,7 +274,7 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 15_000, 20_000, 25_000, 30_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[500, 1500, 2500, 3500, 5_000, 7500,  10_000, 12500, 15_000, 20_000, 25_000, 30_000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument('--disable_viewer', action='store_true', default=False)
